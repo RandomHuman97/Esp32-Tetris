@@ -23,6 +23,37 @@
 #define PIECE_TIMEOUT 20
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R1, /* reset=*/U8X8_PIN_NONE);
 
+//tile data
+const uint8_t tile_block[8] = {
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+    0b11111111,
+};
+const uint8_t tile_block_squared[8] = {
+    0b11111111,
+    0b10000001,
+    0b10111101,
+    0b10111101,
+    0b10111101,
+    0b10111101,
+    0b10000001,
+    0b11111111,
+};
+const uint8_t tile_block_holepunched[8] = {
+    0b11111111,
+    0b10000001,
+    0b10111101,
+    0b10100101,
+    0b10100101,
+    0b10111101,
+    0b10000001,
+    0b11111111,
+};
 /*
 0,0         60,0
 
@@ -187,21 +218,24 @@ class Game {
             for (int i = 0; i < GRID_WIDTH; i++) {
                 for (int j = 0; j < GRID_HEIGHT; j++) {
                     if (grid[i][j] == 1) {
-                        u8g2.drawBox(i * 8, j * 8, 8, 8);
+                        //u8g2.drawBox(i * 8, j * 8, 8, 8);
+                        u8g2.drawXBMP(i * 8, j * 8, 8, 8 , tile_block); 
                     }
                     if (grid[i][j] == 2){
-                        u8g2.drawFrame(i * 8, j * 8, 8, 8);
+                        //u8g2.drawFrame(i * 8, j * 8, 8, 8);
                         // draw 2x2 box inside the frame
-                        u8g2.drawFrame(i * 8 + 2, j * 8 + 2, 4, 4);
+                        //u8g2.drawFrame(i * 8 + 2, j * 8 + 2, 4, 4);
+                        u8g2.drawXBMP(i * 8, j * 8, 8, 8 , tile_block_holepunched); 
                     }
                     if (grid[i][j] == 3){
-                        u8g2.drawFrame(i * 8, j * 8, 8, 8);
+                        //u8g2.drawFrame(i * 8, j * 8, 8, 8);
                         // draw 2x2 box inside the frame
-                        u8g2.drawBox(i * 8 + 2, j * 8 + 2, 4, 4);
+                        //u8g2.drawBox(i * 8 + 2, j * 8 + 2, 4, 4);
+                        u8g2.drawXBMP(i * 8, j * 8, 8, 8 , tile_block_squared); 
                     }
                 }
             }
-
+            ulong startTime = millis();
             // render ghost piece
             int ghost_y = current_piece_y;
             while (checkCollision(current_piece_x, ghost_y, current_piece_rotation) == 0) {
@@ -215,25 +249,38 @@ class Game {
                     }
                 }
             }
-
+            ulong endTime = millis();
+            Serial.print("Time taken GRID: ");
+            Serial.println(endTime - startTime);
+            startTime = millis();
             //rendering the current piece
             for (int i = 0; i < 3; i++) {
                 for (int j = 0; j < 3; j++) {
                     if (current_piece[i][j] == 1) {
                         if (current_piece_skin == 1) {
-                            u8g2.drawBox((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
+                            //u8g2.drawBox((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
+                            u8g2.drawXBMP((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8 , tile_block);
                         } else if (current_piece_skin == 2) {
-                            u8g2.drawFrame((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
-                            u8g2.drawFrame((current_piece_x + i) * 8 + 2, (current_piece_y + j) * 8 + 2, 4, 4);
+                            u8g2.drawXBMP((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8 , tile_block_holepunched);
+                            //u8g2.drawFrame((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
+                            //u8g2.drawFrame((current_piece_x + i) * 8 + 2, (current_piece_y + j) * 8 + 2, 4, 4);
                         } else if (current_piece_skin == 3) {
-                            u8g2.drawFrame((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
-                            u8g2.drawBox((current_piece_x + i) * 8 + 2, (current_piece_y + j) * 8 + 2, 4, 4);
+
+                            u8g2.drawXBMP((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8 , tile_block_squared);
+                            //u8g2.drawFrame((current_piece_x + i) * 8, (current_piece_y + j) * 8, 8, 8);
+                            //drawBox((current_piece_x + i) * 8 + 2, (current_piece_y + j) * 8 + 2, 4, 4);
                         }
                     }
                 }
             }
-
+            endTime = millis();
+            Serial.print("Time taken PIECE: ");
+            Serial.println(endTime - startTime);
+            startTime = millis();
             u8g2.sendBuffer();
+            endTime = millis();
+            Serial.print("Time taken BUFFER: ");
+            Serial.println(endTime - startTime);
         }
         void clearRows(){
             for (int j = GRID_HEIGHT - 1; j >= 0; j--) {
