@@ -7,7 +7,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <Wire.h>
-
+#include <EEPROM.h>
 #define BUTTON_4 12
 #define BUTTON_5 14
 #define BUTTON_6 27
@@ -94,7 +94,41 @@ byte (*pieces[])[3][3] = {
     &piece_z,
     &piece_i,
     &piece_square};
+unsigned long score = 0;
+String message = "";
+byte game_state = 1;
 
+void EEPROM_writeLong(int address, unsigned long value) {
+    Serial.printf("Writing value to EEPROM: %lu\n", value);
+    
+    byte value_array[4];
+    for (int i = 0; i < 4; i++) {
+        value_array[i] = (value >> (i * 8)) & 0xFF;
+        Serial.printf("Byte %d: 0x%02X\n", i, value_array[i]);
+    }
+    
+    for (int i = 0; i < 4; i++) {
+        EEPROM.write(address + i, value_array[i]);
+    }
+    
+    if (EEPROM.commit()) {
+        Serial.println("EEPROM write successful");
+    } else {
+        Serial.println("EEPROM write failed!");
+    }
+}
+
+unsigned long EEPROM_readLong(int address) {
+    byte value_array[4];
+    for (int i = 0; i < 4; i++) {
+        value_array[i] = EEPROM.read(address + i);
+    }
+    unsigned long value = 0;
+    for (int i = 0; i < 4; i++) {
+        value |= ((unsigned long)value_array[i]) << (i * 8);
+    }
+    return value;
+}
 class Game {
     public:
         byte grid[GRID_WIDTH][GRID_HEIGHT];
@@ -104,6 +138,8 @@ class Game {
         int current_piece_type;
         int current_piece_skin;
         int current_piece_rotation;
+        bool new_piece = true;
+
         Game() {
             // Initialize the grid
             for (int i = 0; i < GRID_WIDTH; i++) {
@@ -121,6 +157,7 @@ class Game {
             memcpy(current_piece, pieces[current_piece_type], sizeof(current_piece));
         }
         void stampPiece() {
+            new_piece = true;
             for (int i = 0; i < 3; i++) {
                 for (int j = 0; j < 3; j++) {
                     if (current_piece[i][j] == 1) {
@@ -132,7 +169,7 @@ class Game {
             current_piece_y = INITIAL_PIECE_Y;
             current_piece_type = random(0, 5);
             current_piece_rotation = 0;
-            current_piece_skin = random(1, 4);
+            current_piece_skin = current_piece_skin % 3 + 1;
             memcpy(current_piece, pieces[current_piece_type], sizeof(current_piece));
             delay(250);
         }
@@ -142,24 +179,31 @@ class Game {
             int new_y = current_piece_y + y;
             int collision = checkCollision(new_x, new_y, current_piece_rotation);
             if (collision==2) {
+                if (new_piece) {
+                        game_state = 0;
+                }
                 stampPiece();
                 return;
             }
 
             if (collision==1) {
                 if (y == 1 && x == 0) {
+                    if (new_piece) {
+                        game_state = 0;
+                    }
                     //hacky ahhhh
                     stampPiece();
                     return;
+
                 }
                 return;
             }
+            new_piece = false;
             current_piece_y = new_y;
             if (collision == 3) {
                 return;
             }
             current_piece_x = new_x;
-
         }
 
         int checkCollision(int x, int y, int rotation){
@@ -213,7 +257,6 @@ class Game {
             } 
         }
         void render(){
-            u8g2.clearBuffer();
             //rendering the grid
             for (int i = 0; i < GRID_WIDTH; i++) {
                 for (int j = 0; j < GRID_HEIGHT; j++) {
@@ -235,7 +278,6 @@ class Game {
                     }
                 }
             }
-            ulong startTime = millis();
             // render ghost piece
             int ghost_y = current_piece_y;
             while (checkCollision(current_piece_x, ghost_y, current_piece_rotation) == 0) {
@@ -249,10 +291,7 @@ class Game {
                     }
                 }
             }
-            ulong endTime = millis();
-            Serial.print("Time taken GRID: ");
-            Serial.println(endTime - startTime);
-            startTime = millis();
+
             //rendering the current piece
             for (int i = 0; i < 3; i++) {
                 for (int j = 0; j < 3; j++) {
@@ -273,16 +312,11 @@ class Game {
                     }
                 }
             }
-            endTime = millis();
-            Serial.print("Time taken PIECE: ");
-            Serial.println(endTime - startTime);
-            startTime = millis();
-            u8g2.sendBuffer();
-            endTime = millis();
-            Serial.print("Time taken BUFFER: ");
-            Serial.println(endTime - startTime);
+            
+            
         }
         void clearRows(){
+            byte rows_combo = 0;
             for (int j = GRID_HEIGHT - 1; j >= 0; j--) {
             byte row_filled = 1;
             for (int i = 0; i < GRID_WIDTH; i++) {
@@ -292,6 +326,7 @@ class Game {
                 }
             }
             if (row_filled == 1) {
+                rows_combo += 1;
                 for (int k = j; k > 0; k--) {
                 for (int i = 0; i < GRID_WIDTH; i++) {
                     grid[i][k] = grid[i][k - 1];
@@ -303,6 +338,20 @@ class Game {
                 j += 1;
             }
             }
+            if (rows_combo == 1) {
+                score += 40;
+                message = "Single";
+            } else if( rows_combo == 2) {
+                score += 100;
+                message = "Double!";
+            } else if (rows_combo == 3) {
+                score += 300;
+                message = "Triple!";
+            } else if (rows_combo >= 4) {
+                score += 1200;
+                message = "Tetris!!!";
+            }   
+
         }
 
 
@@ -310,12 +359,15 @@ class Game {
 Game game;
 
 void setup() {
+    Wire.begin();
+    Wire.setClock(400000); //la overclock =)
+    EEPROM.begin(512);
     Serial.begin(115200);
     //randomize the random number generator
     randomSeed(esp_random());
 
     u8g2.begin();
-    
+    u8g2.setFont(u8g2_font_squeezed_b6_tr);
     pinMode(BUTTON_1, INPUT_PULLUP);
     pinMode(BUTTON_2, INPUT_PULLUP);
     pinMode(BUTTON_3, INPUT_PULLUP);
@@ -323,16 +375,20 @@ void setup() {
     pinMode(BUTTON_5, INPUT_PULLUP);
     pinMode(BUTTON_6, INPUT_PULLUP);
     u8g2.clearBuffer();
+    if (digitalRead(BUTTON_4)== LOW) {
+        EEPROM_writeLong(0, 0);
+    }
 
 }
 byte tick = 0;
 byte actionTick = 0;
 void loop() {
-    ulong startTime = millis();
+    while (game_state == 1){
     tick += 1;
     if (tick == PIECE_TIMEOUT) {
         game.movePiece(0, 1);
         tick = 0;
+        score += 1;
     }
 
     if (digitalRead(BUTTON_1) == LOW && actionTick == 0) {
@@ -341,6 +397,7 @@ void loop() {
     }
     if (digitalRead(BUTTON_2) == LOW) {
         game.movePiece(0, 1);
+        score += 2;
     }
     if (digitalRead(BUTTON_3) == LOW && actionTick == 0) {
         game.movePiece(1, 0);
@@ -354,8 +411,33 @@ void loop() {
         actionTick -= 1;
     }
     game.clearRows();
+    u8g2.clearBuffer();
     game.render();
-    ulong endTime = millis();
-    Serial.print("Time taken: ");
-    Serial.println(endTime - startTime);
+    u8g2.setCursor(0, 128);
+    u8g2.print(score);
+    u8g2.print(" ");
+    u8g2.print(message);
+    u8g2.sendBuffer();
+    }
+    if (EEPROM_readLong(0) < score) {
+        EEPROM_writeLong(0, score);
+    }
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, 8);
+    u8g2.print("Game Over!");
+    u8g2.setCursor(0, 64);
+    u8g2.print("High Score: ");
+    u8g2.setCursor(0, 72);
+    u8g2.print(EEPROM_readLong(0));
+    u8g2.setCursor(0, 128);
+    u8g2.print("Score: ");
+    u8g2.print(score);
+
+    u8g2.sendBuffer();
+
+    while (true){
+        if (digitalRead(BUTTON_2) == LOW || digitalRead(BUTTON_3) == LOW || digitalRead(BUTTON_1) == LOW) {
+            ESP.restart();
+        }
+    }
 }
